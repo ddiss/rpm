@@ -768,6 +768,7 @@ impl PackageBuilder {
             base_names.push(entry.base_name.to_owned());
             // @todo: is there a use case for not performing all verifications? and are we performing those verifications currently anyway?
             file_verify_flags.push(FileVerifyFlags::all().bits());
+            eprintln!("writing cpio for {}", cpio_path);
             let content = entry.content.to_owned();
             let mut writer = cpio::newc::Builder::new(cpio_path)
                 .mode(entry.mode.into())
@@ -776,8 +777,14 @@ impl PackageBuilder {
                 .gid(self.gid.unwrap_or(0))
                 .write(&mut archive, content.len() as u32);
 
+            // explicitly write and flush to ensure header is in a single frame
+            writer.write(&[])?;  // hack to trigger (private) try_write_header()
+            //writer.try_write_header();
+            writer.flush()?;
+
             writer.write_all(&content)?;
-            writer.finish()?;
+            writer.flush()?; // flush frame(s) for cpio file data
+            writer.finish()?;   // may pad further
 
             ino_index += 1;
         }
@@ -1163,6 +1170,7 @@ impl PackageBuilder {
 
         // digest of the uncompressed raw archive calculated on the inner writer
         let raw_archive_digest_sha256 = hex::encode(archive.into_digest());
+        compressor.flush()?;    // ensure cpio trailer is flushed
         let payload = compressor.finish_compression()?;
 
         // digest of the post-compression archive (payload)
