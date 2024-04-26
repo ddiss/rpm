@@ -9,7 +9,6 @@ use libc;
 use zstd::zstd_safe;
 use std::os::fd::AsRawFd;
 use std::io::{
-    Read,
     Seek,
     Error,
     ErrorKind,
@@ -240,7 +239,7 @@ fn install_cpio(cpio_path: &str, inst_root: &str) -> Result<(), Box<dyn std::err
     dout!("installing");
     let mut file = std::io::BufReader::new(std::fs::File::open(cpio_path)?);
     loop {
-        let mut reader = cpio::NewcReader::new(file).unwrap();
+        let reader = cpio::NewcReader::new(file).unwrap();
         if reader.entry().is_trailer() {
             break;
         }
@@ -256,29 +255,17 @@ fn install_cpio(cpio_path: &str, inst_root: &str) -> Result<(), Box<dyn std::err
             Some(p) => std::fs::create_dir_all(p)?,
         };
 
+        let entfile = std::fs::File::create(&inst_path).unwrap();
         // TODO handle all cpio types and set mode / owner
 
-        if reader.entry().file_size() > 0 {
-            let cpio_dataoff = reader.offset()?;
-            eprintln!("reader is at {}", cpio_dataoff);
-            // we really shouldn't need to reopen per loop
-            let mut copysrc = std::fs::OpenOptions::new()
-                .read(true)
-                .write(false)
-                .open(cpio_path).unwrap();
-            copysrc.seek(std::io::SeekFrom::Start(cpio_dataoff))?;
-            let mut bound = copysrc.take(reader.entry().file_size().into());
-            let mut entfile = std::fs::File::create(&inst_path).unwrap();
-            match std::io::copy(&mut bound, &mut entfile) {
-                Err(e) => {
-                    eprintln!("failed to cpio file {} data", reader.entry().name());
-                    return Err(Box::new(e));
-                },
-                Ok(l) => eprintln!("copied cpio file {} data len {}", inst_path.display(), l),
-            };
-        }
-        // move to next
-        file = reader.skip().unwrap();
+        // move to next, copying file data if present
+        file = match reader.entry().file_size() {
+            l if l > 0 => {
+                eprintln!("copying cpio file {} data len {}", inst_path.display(), l);
+                reader.to_writer(entfile)
+            },
+            _ => reader.skip(),
+        }?;
     }
     Ok(())
 }
