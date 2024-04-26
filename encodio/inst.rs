@@ -259,7 +259,7 @@ fn install_cpio(cpio_path: &str, inst_root: &str) -> Result<(), Box<dyn std::err
         // TODO handle all cpio types and set mode / owner
 
         if reader.entry().file_size() > 0 {
-            let cpio_dataoff = reader.ioff()?;
+            let cpio_dataoff = reader.offset()?;
             eprintln!("reader is at {}", cpio_dataoff);
             // we really shouldn't need to reopen per loop
             let mut copysrc = std::fs::OpenOptions::new()
@@ -278,7 +278,7 @@ fn install_cpio(cpio_path: &str, inst_root: &str) -> Result<(), Box<dyn std::err
             };
         }
         // move to next
-        file = reader.seek_finish().unwrap();
+        file = reader.skip().unwrap();
     }
     Ok(())
 }
